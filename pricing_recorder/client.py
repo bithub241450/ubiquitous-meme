@@ -1,119 +1,85 @@
-"""HTTP client for interacting with 21st Century Distributing."""
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
-from urllib.parse import urljoin
-
 import requests
+from urllib.parse import urljoin
+from typing import Optional, Dict
 
-_DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/121.0.0.0 Safari/537.36"
-)
 
-class AuthenticationError(RuntimeError):
-    """Raised when the provided credentials are rejected by the website."""
+class AuthenticationError(Exception):
+    """Raised when authentication fails."""
+    pass
 
-class RequestFailed(RuntimeError):
-    """Raised when a HTTP request fails for any reason."""
 
-@dataclass(slots=True)
+class RequestFailed(Exception):
+    """Raised when a request to the site fails."""
+    pass
+
+
 class Century21Client:
-    """Stateful HTTP client that maintains a logged-in session."""
+    """Client to interact with 21st Century Distributing site."""
 
-    email: str
-    password: str
-    base_url: str = "https://21stcenturydist.com/"
-    user_agent: str = _DEFAULT_USER_AGENT
-    timeout: int = 30
-    _session: requests.Session = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
+    def __init__(self, base_url: str = "https://21stcenturydist.com", timeout: float = 30.0) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
         self._session = requests.Session()
-        self._session.headers.update(
-            {
-                "User-Agent": self.user_agent,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": self.base_url,
-            }
-        )
-        if not self.base_url.endswith("/"):
-            self.base_url = f"{self.base_url}/"
+        # Set headers and referer to mimic a browser and set correct referer
+        self._session.headers.update({
+            "User-Agent": "Mozilla/5.0 (compatible; PricingRecorder/1.0)",
+            "Referer": f"{self.base_url}/default.cfm",
+        })
+        # Initialize cookies by visiting the homepage once
+        self._session.get(f"{self.base_url}/default.cfm", timeout=self.timeout)
 
-    # ------------------------------------------------------------------
-    # public API
-    # ------------------------------------------------------------------
-    def login(self) -> None:
-        """Authenticate the session using the stored credentials."""
-
-        payload = {"Action": "SignIn", "email": self.email, "passwd": self.password}
-        response = self._session.post(
-            self._url("generalActions.cfm"), data=payload, timeout=self.timeout
-        )
-        self._ensure_success(response)
-
-        try:
-            data: Dict[str, Any] = response.json()
-        except ValueError as exc:  # pragma: no cover - defensive
-            raise RequestFailed("Login response did not contain valid JSON") from exc
-
-        if data.get("ERRORMESSAGE"):
-            raise AuthenticationError(data["ERRORMESSAGE"])
-
-        if not data.get("SUCCESSMESSAGE"):
-            raise AuthenticationError("Login failed without a specific error message.")
+    def login(self, email: str, password: str) -> None:
+        """Login to the site using provided credentials."""
+        data = {"email": email, "password": password}
+        resp = self._session.post(f"{self.base_url}/default.cfm?login=Y", data=data, timeout=self.timeout)
+        if "Logout" not in resp.text and "Sign Out" not in resp.text:
+            raise AuthenticationError("Login failed")
 
     def fetch_manufacturer_page(self, manufacturer: str) -> str:
-        """Return the raw HTML for a manufacturer listing page.
-
-        This implementation performs a search query for the manufacturer name because
-        the dedicated manufacturer landing pages no longer list products directly.
-        """
-        # Use search endpoint to return product listings for the manufacturer
-        params = {"search": "Y", "searchterm": manufacturer}
-        response = self._session.get(
-            self._url("default.cfm"), params=params, timeout=self.timeout
-        )
-        self._ensure_success(response)
-        return response.text
+        """Return HTML for a manufacturer search page using AJAX endpoint with fallback."""
+        # Attempt AJAX search endpoint first
+        params_ajax = {"searchterm": manufacturer}
+        resp = self._session.get(self._url("ajax/productsearch.cfm"), params=params_ajax, timeout=self.timeout)
+        # If no products found, fall back to full search page
+        if "productDescription" not in resp.text:
+            params_full = {"search": "Y", "searchterm": manufacturer}
+            resp = self._session.get(self._url("default.cfm"), params=params_full, timeout=self.timeout)
+        self._ensure_success(resp)
+        return resp.text
 
     def fetch_item_page(self, item_code: str) -> str:
         """Return the raw HTML for a specific item detail page."""
-
-        params = {"itemsearch": item_code, "page": "products", "searchcode": "N"}
-        response = self._session.get(
-            self._url("default.cfm"), params=params, timeout=self.timeout
-        )
-        self._ensure_success(response)
-        return response.text
+        params = {
+            "itemsearch": item_code,
+            "page": "products",
+            "searchcode": "N",
+        }
+        resp = self._session.get(self._url("default.cfm"), params=params, timeout=self.timeout)
+        self._ensure_success(resp)
+        return resp.text
 
     def download_price_sheet(self, manufacturer: str) -> bytes:
         """Download the manufacturer PDF price sheet."""
-
         params = {"manufacturer": manufacturer}
-        response = self._session.get(
-            self._url("priceSheetPDF.cfm"), params=params, timeout=self.timeout
-        )
-        self._ensure_success(response)
-        return response.content
+        resp = self._session.get(self._url("priceSheetPDF.cfm"), params=params, timeout=self.timeout)
+        self._ensure_success(resp)
+        return resp.content
 
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
     def _url(self, path: str) -> str:
-        return urljoin(self.base_url, path)
+        """Build a fully qualified URL for a given path."""
+        return urljoin(f"{self.base_url}/", path)
 
     def _ensure_success(self, response: requests.Response) -> None:
+        """Raise RequestFailed if the response contains an HTTP error."""
         try:
             response.raise_for_status()
-        except requests.HTTPError as exc:  # pragma: no cover - network failure
+        except requests.HTTPError as exc:
             raise RequestFailed(str(exc)) from exc
 
     @property
     def session(self) -> requests.Session:
         """Expose the underlying session for advanced use cases."""
-
         return self._session
