@@ -1,17 +1,16 @@
 import requests
 from urllib.parse import urljoin
 from typing import Optional, Dict
-
+import logging
+import http.client as http_client
 
 class AuthenticationError(Exception):
     """Raised when authentication fails."""
     pass
 
-
 class RequestFailed(Exception):
     """Raised when a request to the site fails."""
     pass
-
 
 class Century21Client:
     """Client to interact with 21st Century Distributing site."""
@@ -30,8 +29,19 @@ class Century21Client:
 
     def login(self, email: str, password: str) -> None:
         """Login to the site using provided credentials."""
+        # Enable verbose HTTP logging
+        http_client.HTTPConnection.debuglevel = 1
+        logging.basicConfig()
+        logging.getLogger().setLevel(logging.DEBUG)
+        requests_log = logging.getLogger("urllib3")
+        requests_log.setLevel(logging.DEBUG)
+        requests_log.propagate = True
+
         data = {"email": email, "password": password}
         resp = self._session.post(f"{self.base_url}/default.cfm?login=Y", data=data, timeout=self.timeout)
+        # Print session cookies after login
+        print("Session cookies after login:", self._session.cookies.get_dict())
+
         if "Logout" not in resp.text and "Sign Out" not in resp.text:
             raise AuthenticationError("Login failed")
 
@@ -65,9 +75,7 @@ class Century21Client:
         self._ensure_success(resp)
         return resp.content
 
-    # ------------------------------------------------------------------
     # helpers
-    # ------------------------------------------------------------------
     def _url(self, path: str) -> str:
         """Build a fully qualified URL for a given path."""
         return urljoin(f"{self.base_url}/", path)
