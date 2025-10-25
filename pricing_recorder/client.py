@@ -1,5 +1,4 @@
 """HTTP client for interacting with 21st Century Distributing."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -14,14 +13,11 @@ _DEFAULT_USER_AGENT = (
     "Chrome/121.0.0.0 Safari/537.36"
 )
 
-
 class AuthenticationError(RuntimeError):
     """Raised when the provided credentials are rejected by the website."""
 
-
 class RequestFailed(RuntimeError):
     """Raised when a HTTP request fails for any reason."""
-
 
 @dataclass(slots=True)
 class Century21Client:
@@ -71,9 +67,13 @@ class Century21Client:
             raise AuthenticationError("Login failed without a specific error message.")
 
     def fetch_manufacturer_page(self, manufacturer: str) -> str:
-        """Return the raw HTML for a manufacturer listing page."""
+        """Return the raw HTML for a manufacturer listing page.
 
-        params = {"pagelink": "manufacturer", "pagelink1": manufacturer, "logo": "Y"}
+        This implementation performs a search query for the manufacturer name because
+        the dedicated manufacturer landing pages no longer list products directly.
+        """
+        # Use search endpoint to return product listings for the manufacturer
+        params = {"search": "Y", "searchterm": manufacturer}
         response = self._session.get(
             self._url("default.cfm"), params=params, timeout=self.timeout
         )
