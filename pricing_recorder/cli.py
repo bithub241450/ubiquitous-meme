@@ -12,6 +12,10 @@ from typing import Iterable
 from .client import AuthenticationError, Century21Client, RequestFailed
 from .collector import ManufacturerCollectionResult, collect_manufacturer_rows
 from .constants import DEFAULT_BASE_URL
+from typing import Iterable, List
+
+from .client import AuthenticationError, Century21Client, RequestFailed
+from .parser import parse_manufacturer_products
 from .utils import union_fieldnames
 
 
@@ -23,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True, help="Output file path")
     parser.add_argument("--format", choices={"csv", "json"}, default="csv", help="Output file format")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Override the site base URL")
+    parser.add_argument("--base-url", default="https://21stcenturydist.com/", help="Override the site base URL")
     parser.add_argument("--timeout", type=int, default=30, help="Request timeout in seconds")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     parser.add_argument(
@@ -72,6 +77,24 @@ def main(argv: Iterable[str] | None = None) -> int:
         )
 
     all_rows = result.rows
+    all_rows: List[dict[str, str]] = []
+
+    for manufacturer in args.manufacturer:
+        if args.verbose:
+            print(f"[info] Fetching products for {manufacturer}", file=sys.stderr)
+        try:
+            html = client.fetch_manufacturer_page(manufacturer)
+        except RequestFailed as exc:
+            print(f"[error] Failed to fetch manufacturer page for {manufacturer}: {exc}", file=sys.stderr)
+            return 1
+        products = parse_manufacturer_products(html, manufacturer=manufacturer)
+        if not products:
+            print(
+                f"[warn] No products parsed for {manufacturer}. Check credentials or manufacturer spelling.",
+                file=sys.stderr,
+            )
+        for product in products:
+            all_rows.append(product.as_flat_dict())
 
     if not all_rows:
         print("[warn] No data collected. Nothing will be written.", file=sys.stderr)
@@ -92,6 +115,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
 
 def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
+def _write_csv(path: Path, rows: List[dict[str, str]]) -> None:
     import csv
 
     fieldnames = union_fieldnames(rows)
@@ -102,6 +126,7 @@ def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
 
 
 def _write_json(path: Path, rows: list[dict[str, str]]) -> None:
+def _write_json(path: Path, rows: List[dict[str, str]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(rows, handle, indent=2)
 

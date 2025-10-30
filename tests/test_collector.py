@@ -4,13 +4,12 @@ from dataclasses import dataclass
 from typing import Dict
 
 from pricing_recorder.collector import collect_manufacturer_rows
-from pricing_recorder.constants import DEFAULT_BASE_URL
 
 
 @dataclass
 class DummyClient:
     pages: Dict[str, str]
-    base_url: str = DEFAULT_BASE_URL
+    base_url: str = "https://21stcenturydist.com/"
 
     def fetch_manufacturer_page(self, manufacturer: str) -> str:
         return self.pages.get(manufacturer, "")

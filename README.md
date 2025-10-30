@@ -1,6 +1,6 @@
 # ubiquitous-meme
 
-This repository contains a command line tool for capturing pricing information from [21st Century Distributing](https://www.21stcenturydist.com/).
+This repository contains a command line tool for capturing pricing information from [21st Century Distributing](https://21stcenturydist.com/).
 
 ## Features
 

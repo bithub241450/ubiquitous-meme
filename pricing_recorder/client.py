@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict
-from urllib.parse import urljoin, urlparse
+from typing import Any, Dict, Optional
+from urllib.parse import urljoin
 
 import requests
 
@@ -42,7 +42,8 @@ class Century21Client:
         self.password = self.password.strip()
         if not self.user_agent.strip():
             self.user_agent = _DEFAULT_USER_AGENT
-        self.base_url = _canonicalize_base_url(self.base_url)
+        if not self.base_url.endswith("/"):
+            self.base_url = f"{self.base_url}/"
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -145,10 +146,6 @@ class Century21Client:
         except requests.RequestException as exc:  # pragma: no cover - network failure
             raise RequestFailed(f"Session bootstrap failed: {exc}") from exc
         self._ensure_success(response, "session bootstrap")
-        resolved_base = _canonicalize_base_url(getattr(response, "url", "") or self.base_url)
-        if resolved_base != self.base_url:
-            self.base_url = resolved_base
-            self._session.headers["Referer"] = self.base_url
         self._primed = True
 
     def _login_headers(self) -> Dict[str, str]:
@@ -173,24 +170,97 @@ class Century21Client:
                     .format(context)
                 ) from exc
             raise RequestFailed(f"{context} failed: {exc}") from exc
+import requests
+from urllib.parse import urljoin
+from typing import Optional, Dict
+import logging
+import http.client as http_client
+
+class AuthenticationError(Exception):
+    """Raised when authentication fails."""
+    pass
+
+class RequestFailed(Exception):
+    """Raised when a request to the site fails."""
+    pass
+
+class Century21Client:
+    """Client to interact with 21st Century Distributing site."""
+
+    def __init__(self, base_url: str = "https://21stcenturydist.com", timeout: float = 30.0) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self._session = requests.Session()
+        # Set headers and referer to mimic a browser and set correct referer
+        self._session.headers.update({
+            "User-Agent": "Mozilla/5.0 (compatible; PricingRecorder/1.0)",
+            "Referer": f"{self.base_url}/default.cfm",
+        })
+        # Initialize cookies by visiting the homepage once
+        self._session.get(f"{self.base_url}/default.cfm", timeout=self.timeout)
+
+    def login(self, email: str, password: str) -> None:
+        """Login to the site using provided credentials."""
+        # Enable verbose HTTP logging
+        http_client.HTTPConnection.debuglevel = 1
+        logging.basicConfig()
+        logging.getLogger().setLevel(logging.DEBUG)
+        requests_log = logging.getLogger("urllib3")
+        requests_log.setLevel(logging.DEBUG)
+        requests_log.propagate = True
+
+        data = {"email": email, "password": password}
+        resp = self._session.post(f"{self.base_url}/default.cfm?login=Y", data=data, timeout=self.timeout)
+        # Print session cookies after login
+        print("Session cookies after login:", self._session.cookies.get_dict())
+
+        if "Logout" not in resp.text and "Sign Out" not in resp.text:
+            raise AuthenticationError("Login failed")
+
+    def fetch_manufacturer_page(self, manufacturer: str) -> str:
+        """Return HTML for a manufacturer search page using AJAX endpoint with fallback."""
+        # Attempt AJAX search endpoint first
+        params_ajax = {"searchterm": manufacturer}
+        resp = self._session.get(self._url("ajax/productsearch.cfm"), params=params_ajax, timeout=self.timeout)
+        # If no products found, fall back to full search page
+        if "productDescription" not in resp.text:
+            params_full = {"search": "Y", "searchterm": manufacturer}
+            resp = self._session.get(self._url("default.cfm"), params=params_full, timeout=self.timeout)
+        self._ensure_success(resp)
+        return resp.text
+
+    def fetch_item_page(self, item_code: str) -> str:
+        """Return the raw HTML for a specific item detail page."""
+        params = {
+            "itemsearch": item_code,
+            "page": "products",
+            "searchcode": "N",
+        }
+        resp = self._session.get(self._url("default.cfm"), params=params, timeout=self.timeout)
+        self._ensure_success(resp)
+        return resp.text
+
+    def download_price_sheet(self, manufacturer: str) -> bytes:
+        """Download the manufacturer PDF price sheet."""
+        params = {"manufacturer": manufacturer}
+        resp = self._session.get(self._url("priceSheetPDF.cfm"), params=params, timeout=self.timeout)
+        self._ensure_success(resp)
+        return resp.content
+
+    # helpers
+    def _url(self, path: str) -> str:
+        """Build a fully qualified URL for a given path."""
+        return urljoin(f"{self.base_url}/", path)
+
+    def _ensure_success(self, response: requests.Response) -> None:
+        """Raise RequestFailed if the response contains an HTTP error."""
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            raise RequestFailed(str(exc)) from exc
 
     @property
     def session(self) -> requests.Session:
         """Expose the underlying session for advanced use cases."""
 
         return self._session
-
-
-def _canonicalize_base_url(url: str) -> str:
-    """Normalize the base URL to scheme + host with a trailing slash."""
-
-    url = url.strip()
-    if not url:
-        return DEFAULT_BASE_URL
-
-    parsed = urlparse(url)
-    if not parsed.scheme or not parsed.netloc:
-        # Already a relative URL or malformed input; fall back to default.
-        return DEFAULT_BASE_URL
-
-    return f"{parsed.scheme}://{parsed.netloc}/"
