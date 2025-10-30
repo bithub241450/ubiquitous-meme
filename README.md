@@ -20,8 +20,6 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-If the `pip install -e .` step is executed from another directory (for example, your home folder), `pip` will raise `does not appear to be a Python project` because it cannot find this project's `pyproject.toml`. Always run the install command from the folder that contains `pyproject.toml` (the repository root).
-
 ## Usage
 
 The `pricing-recorder` entry point requires valid credentials for the portal. Credentials can be provided either via command line flags or the `CENTURY21_EMAIL` and `CENTURY21_PASSWORD` environment variables.
