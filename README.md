@@ -44,6 +44,14 @@ Some manufacturer listing pages are publicly accessible without a login. For tho
 pricing-recorder "AV Distribution" --skip-login --output data/av-distribution.csv --format csv --verbose
 ```
 
+### Troubleshooting authentication
+
+The CLI now mirrors the browser login flow by first visiting the portal home page so that Azure Application Gateway cookies are issued before the credential check. If you continue to see `Authorization failed` messages:
+
+- Double-check the email and password being supplied to the tool. Copy/paste errors are the most common cause.
+- Ensure your account can sign in via the website directly. Accounts without B2B access will be rejected by the portal even though the scraper handshakes correctly.
+- Some corporate networks block outbound traffic to the distributor. Running the command with `--verbose` will surface HTTP errors encountered during the login or collection steps.
+
 ## Development
 
 Run the unit tests with:

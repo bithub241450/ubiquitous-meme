@@ -7,6 +7,11 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Iterable
+
+from .client import AuthenticationError, Century21Client, RequestFailed
+from .collector import ManufacturerCollectionResult, collect_manufacturer_rows
+from .constants import DEFAULT_BASE_URL
 from typing import Iterable, List
 
 from .client import AuthenticationError, Century21Client, RequestFailed
@@ -21,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--password", help="Account password. Defaults to CENTURY21_PASSWORD env var")
     parser.add_argument("--output", required=True, help="Output file path")
     parser.add_argument("--format", choices={"csv", "json"}, default="csv", help="Output file format")
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Override the site base URL")
     parser.add_argument("--base-url", default="https://21stcenturydist.com/", help="Override the site base URL")
     parser.add_argument("--timeout", type=int, default=30, help="Request timeout in seconds")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
@@ -55,6 +61,22 @@ def main(argv: Iterable[str] | None = None) -> int:
             print(f"[error] Request failed during login: {exc}", file=sys.stderr)
             return 1
 
+    if args.verbose:
+        print(f"[info] Collecting manufacturers: {', '.join(args.manufacturer)}", file=sys.stderr)
+
+    try:
+        result: ManufacturerCollectionResult = collect_manufacturer_rows(client, args.manufacturer)
+    except RequestFailed as exc:
+        print(f"[error] Request failed while fetching data: {exc}", file=sys.stderr)
+        return 1
+
+    for manufacturer in result.empty_manufacturers:
+        print(
+            f"[warn] No products parsed for {manufacturer}. Check credentials or manufacturer spelling.",
+            file=sys.stderr,
+        )
+
+    all_rows = result.rows
     all_rows: List[dict[str, str]] = []
 
     for manufacturer in args.manufacturer:
@@ -92,6 +114,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     return 0
 
 
+def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
 def _write_csv(path: Path, rows: List[dict[str, str]]) -> None:
     import csv
 
@@ -102,6 +125,7 @@ def _write_csv(path: Path, rows: List[dict[str, str]]) -> None:
         writer.writerows(rows)
 
 
+def _write_json(path: Path, rows: list[dict[str, str]]) -> None:
 def _write_json(path: Path, rows: List[dict[str, str]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(rows, handle, indent=2)
