@@ -1,4 +1,15 @@
+# macOS
+.DS_Store
+
+# Python environment
+venv/
 __pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
+
+# Data outputs
+data/*.csv
+data/*.json
+
+# IDE settings
+*.log
+*.idea/
+.vscode/

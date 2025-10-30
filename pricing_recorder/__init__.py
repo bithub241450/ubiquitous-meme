@@ -7,6 +7,7 @@ from .collector import (
     collect_manufacturer_rows,
 )
 from .constants import DEFAULT_BASE_URL
+from .client import Century21Client, AuthenticationError, RequestFailed
 from .models import Product
 from .parser import parse_manufacturer_products
 
@@ -20,4 +21,6 @@ __all__ = [
     "ManufacturerCollectionResult",
     "collect_manufacturer_products",
     "collect_manufacturer_rows",
+    "Product",
+    "parse_manufacturer_products",
 ]
